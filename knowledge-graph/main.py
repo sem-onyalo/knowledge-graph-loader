@@ -9,6 +9,7 @@ from spacy.lang.en import English
 from time import sleep
 from typing import List
 
+ENCODING = "utf-8"
 DATA_DIRECTORY = "./data"
 CACHE_DIRECTORY = "cache/"
 CACHE_CONNECTIONS_FILE = ".entity_connections"
@@ -17,11 +18,6 @@ SENTENCE_QUEUE_WAIT_TIMEOUT = 5
 RELATIONSHIP_EXTRACTION_SERVICE_RETRIES = 5
 RELATIONSHIP_EXTRACTION_SERVICE_TIMEOUT = 3
 RELATIONSHIP_EXTRACTION_SERVICE_URL = 'http://localhost:8000'
-
-nlp = None
-extractor = None
-sentence_queue = None
-connection_list = None
 
 class Document:
     file_name:str
@@ -43,6 +39,11 @@ class EntityConnection:
     relationship:str
     confidence:float
     file_name:str
+
+nlp:English = None
+extractor:OpenIE5 = None
+sentence_queue:Queue = None
+connection_list:List[EntityConnection] = None
 
 def init_logger(level=logging.DEBUG):
     logging.basicConfig(
@@ -75,12 +76,20 @@ def init_relationship_extractor() -> None:
     global extractor
     extractor = OpenIE5(RELATIONSHIP_EXTRACTION_SERVICE_URL)
 
+def cache_connections() -> None:
+    path = os.path.join(DATA_DIRECTORY, CACHE_DIRECTORY, CACHE_CONNECTIONS_FILE)
+    with open(path, mode="w", encoding=ENCODING) as fd:
+        writer = csv.writer(fd)
+        for c in connection_list:
+            row = [c.from_entity, c.to_entity, c.relationship, c.confidence, c.file_name]
+            writer.writerow(row)
+
 def extract_sentences_from_data(data) -> list:
     document = nlp(data)
     return [s.text for s in document.sents]
 
 def extract_data_from_file(file_path) -> str:
-    with open(file_path, encoding="utf-8") as fd:
+    with open(file_path, encoding=ENCODING) as fd:
         data = fd.read()
     return data
 
@@ -92,7 +101,7 @@ def build_documents_from_files(data_files) -> List[Document]:
         documents.append(Document(data_file, sentences))
     return documents
 
-def build_connection_from_extraction(extraction, document:Document) -> EntityConnection:
+def build_connection_from_extraction(extraction:dict, document:Document) -> None:
     if len(extraction["extraction"]["arg2s"]) > 0:
         connection = EntityConnection()
         connection.from_entity = extraction["extraction"]["arg1"]["text"]
@@ -101,9 +110,9 @@ def build_connection_from_extraction(extraction, document:Document) -> EntityCon
         connection.relationship = extraction["extraction"]["rel"]["text"]
         connection.confidence = float(extraction["confidence"])
         connection.file_name = os.path.basename(document.file_name.replace("\\", os.sep))
-        return connection
+        connection_list.append(connection)
 
-def build_connections_from_document(threadId):
+def build_connections_from_document(threadId:str) -> None:
     logging.info(f"{threadId} thread started")
     sentences_processed = 0
     while True:
@@ -131,7 +140,7 @@ def build_connections_from_document(threadId):
             continue
 
         for extraction in extractions:
-            connection_list.append(build_connection_from_extraction(extraction, docSentence.document))
+            build_connection_from_extraction(extraction, docSentence.document)
 
 def build_connections_from_documents(documents:List[Document]) -> List[EntityConnection]:
     sentences_count = 0
@@ -150,13 +159,7 @@ def build_connections_from_documents(documents:List[Document]) -> List[EntityCon
 
     logging.info(f"{sentences_processed} of {sentences_count} sentences processed")
 
-def cache_connections() -> None:
-    path = os.path.join(DATA_DIRECTORY, CACHE_DIRECTORY, CACHE_CONNECTIONS_FILE)
-    with open(path, mode="w", encoding="utf-8") as fd:
-        writer = csv.writer(fd)
-        for c in connection_list:
-            row = [c.from_entity, c.to_entity, c.relationship, c.confidence, c.file_name]
-            writer.writerow(row)
+    cache_connections()
 
 def main():
     init_logger()
@@ -176,8 +179,6 @@ def main():
     documents = build_documents_from_files(data_files)
 
     build_connections_from_documents(documents)
-
-    cache_connections()
 
 if __name__ == "__main__":
     main()
