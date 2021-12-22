@@ -2,7 +2,7 @@ import csv
 import logging
 import os
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pyopenie import OpenIE5
 from queue import Empty, Queue
 from spacy.lang.en import English
@@ -39,6 +39,16 @@ class EntityConnection:
     relationship:str
     confidence:float
     file_name:str
+    def __eq__(self, __o: object) -> bool:
+        if isinstance(__o, self.__class__):
+            other:EntityConnection = __o
+            return (self.from_entity == other.from_entity
+                and self.to_entity == other.to_entity
+                and self.relationship == other.relationship
+                and self.confidence == other.confidence
+                and self.file_name == other.file_name)
+        else:
+            return False
 
 nlp:English = None
 extractor:OpenIE5 = None
@@ -57,8 +67,6 @@ def init_cache():
     if not os.path.isdir(cache_dir):
         os.mkdir(cache_dir)
 
-    # TODO: load data from cache
-
 def init_sentencizer() -> None:
     global nlp
     nlp = English()
@@ -70,7 +78,8 @@ def init_sentence_queue() -> None:
 
 def init_connection_list() -> None:
     global connection_list
-    connection_list = list()
+    cache_connections = get_cache_connections()
+    connection_list = cache_connections if cache_connections != None else list()
 
 def init_relationship_extractor() -> None:
     global extractor
@@ -82,7 +91,32 @@ def cache_connections() -> None:
         writer = csv.writer(fd)
         for c in connection_list:
             row = [c.from_entity, c.to_entity, c.relationship, c.confidence, c.file_name]
+            # TODO: fix extra CRLF at end of line
             writer.writerow(row)
+
+def get_cache_connections() -> List[EntityConnection]:
+    FROM_ENTITY_IDX = 0
+    TO_ENTITY_IDX = 1
+    RELATIONSHIP_IDX = 2
+    CONFIDENCE_IDX = 3
+    FILE_NAME_IDX = 4
+    connections = list()
+    path = os.path.join(DATA_DIRECTORY, CACHE_DIRECTORY, CACHE_CONNECTIONS_FILE)
+    if os.path.isfile(path):
+        with open(path, mode="r", encoding=ENCODING) as fd:
+            reader = csv.reader(fd)
+            for row in reader:
+                if len(row) == 0:
+                    continue
+
+                connection = EntityConnection()
+                connection.from_entity = row[FROM_ENTITY_IDX]
+                connection.to_entity = row[TO_ENTITY_IDX]
+                connection.relationship = row[RELATIONSHIP_IDX]
+                connection.confidence = float(row[CONFIDENCE_IDX])
+                connection.file_name = row[FILE_NAME_IDX]
+                connections.append(connection)
+        return connections
 
 def extract_sentences_from_data(data) -> list:
     document = nlp(data)
@@ -143,6 +177,10 @@ def build_connections_from_document(threadId:str) -> None:
             build_connection_from_extraction(extraction, docSentence.document)
 
 def build_connections_from_documents(documents:List[Document]) -> List[EntityConnection]:
+    if len(connection_list) > 0:
+        logging.info("Skipping build connections, list populated by cache")
+        return
+
     sentences_count = 0
     for document in documents:
         for sentence in document.sentences:
@@ -160,6 +198,14 @@ def build_connections_from_documents(documents:List[Document]) -> List[EntityCon
     logging.info(f"{sentences_processed} of {sentences_count} sentences processed")
 
     cache_connections()
+
+def filter_connections():
+    length_before = len(connection_list)
+    for connection in connection_list:
+        if connection.from_entity in nlp.Defaults.stop_words:
+            connection_list.remove(connection)
+    length_after = len(connection_list)
+    logging.info(f"{length_before - length_after} entity connections removed from list")
 
 def main():
     init_logger()
@@ -179,6 +225,8 @@ def main():
     documents = build_documents_from_files(data_files)
 
     build_connections_from_documents(documents)
+
+    filter_connections()
 
 if __name__ == "__main__":
     main()
