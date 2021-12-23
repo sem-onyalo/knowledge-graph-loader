@@ -107,3 +107,6 @@ ENV/
 
 # Cache folder
 cache/
+
+# Neo4j credentials file
+.credentials
