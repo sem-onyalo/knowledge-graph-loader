@@ -322,7 +322,7 @@ def build_queries_from_connections(connections:List[EntityConnection], queries:Q
         query = ""
         query += f'MERGE (f:Entity {{ name: "{from_entity}" }}) '
         query += f'MERGE (t:Entity {{ name: "{to_entity}" }}) '
-        query += f'MERGE (f)-[:RELATION {{ name: "{relationship}", confidence: "{connection.confidence}" }}]->(t);'
+        query += f'MERGE (f)-[:RELATION {{ name: "{relationship}", confidence: {connection.confidence} }}]->(t);'
         queries.put(query)
         logging.debug(f"Built query {query}")
 
