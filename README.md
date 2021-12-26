@@ -1,4 +1,4 @@
-# Knowledge Graph + Relationship Extraction
+# Knowledge Graph Loader Using NLP Relationship Extraction
 
 This repository using NLP relationship extraction to extract entity-relationship combinations from a body of text and loads it into a graph database.
 
