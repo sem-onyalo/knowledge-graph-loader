@@ -271,7 +271,7 @@ def filter_connections_stop_words(connections:List[EntityConnection]):
 
     while i < current_length:
         connection = connections[i]
-        if connection.from_entity.lower() in nlp.Defaults.stop_words:
+        if connection.from_entity.lower() in nlp.Defaults.stop_words or connection.to_entity.lower() in nlp.Defaults.stop_words:
             logging.debug(f"removing connection for stop word: {connection}")
             connections.remove(connection)
             items_removed += 1
